@@ -1,0 +1,153 @@
+---
+title: 'Assignment 5: Calibration'
+author: "Gab Smith + Andrew Bartnik"
+output:
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(sensitivity)
+library(tidyverse)
+library(lubridate)
+library(reldist)
+library(purrr)
+library(ggpubr)
+```
+
+### Part 1
+
+**Correlation gives an indication of the strength and direction of the relationship between the predicted and observed values to indicate model performance. RMSE gives an indication of how well the model predictions match the observed values, and this metric is more sensitive to large errors, which helps us to identify significant model differences. We use these metrics together to provide a comprehensive assessment of model performance, because they account for both accuracy and precision of model predictions.**
+
+```{r}
+source("season_performance.R")
+
+## See function documentation
+```
+
+### Part 2
+
+Read in data
+
+```{r}
+# sager data
+sager = read.table("~/Desktop/MEDS/Spring/modeling/ESM232_course/Data/sager.txt", header=T)
+# add date to sager data 
+sager = sager %>% mutate(date = paste(day,month,year, sep="/"))
+sager$date = as.Date(sager$date,"%d/%m/%Y")
+
+#msage data
+msage = read.table("~/Desktop/MEDS/Spring/modeling/ESM232_course/Data/sager.txt", header=T)
+```
+
+Msage Data Preparation
+
+```{r}
+# number of simulations as column names 
+nsim = ncol(msage)
+snames = sprintf("S%d",seq(from=1, to=nsim))
+colnames(msage)=snames
+
+
+# start date from earlier output
+msage$date = sager$date
+msage$month = sager$month
+msage$year = sager$year
+msage$day = sager$day
+msage$wy = sager$wy
+
+# adding observed data 
+msage = left_join(msage, sager[,c("obs","date")], by=c("date"))
+
+#head(msage)
+```
+
+1.  Apply your performance function to a subset of the Sagehen data set (with multiple simulations) that you want to use for calibration
+
+```{r}
+# subset msage data to a calibration period 
+msage_sub <- subset(msage, wy > 1975)
+
+#apply function to calibration period 
+res <- msage_sub |> 
+  select(-date, -day, -year, -wy, -obs, -month) |> 
+  map_df(calculate_season_performance, o=msage_sub$obs, wy=msage_sub$wy,
+         month=msage_sub$month)
+
+#summary of performance function results
+summary(res)
+```
+
+2.  Summarize the performance over the calibration period in 1-2 graphs; you can decide what is useful
+
+```{r}
+# add row to link to simulation number 
+res$sim <- snames
+
+# graph range of performance measures
+resl <- res |> 
+  pivot_longer(-sim, names_to="metric", values_to="value")
+
+ggplot(resl, aes(metric, value)) + 
+  geom_boxplot(fill = 'lightblue') + 
+  facet_wrap(~metric, scales="free") +
+  theme_bw()
+```
+
+**We use a boxplot to observe the range of performance measures across the simulations. This plot is particularly helpful in identifying outliers in performance measures (of which we observe none) and comparing the distributions of the correlation and RMSE measures independently of the combined metric. For the applied function, a user is able to specify weights of correlation and RMSE measures, but the function's default is to weight them equally.**
+
+Best and Worst Parameter Sets
+
+```{r}
+# select best result
+best <- res[which.max(res$combined),]
+best
+
+#select worst result 
+worst <- res[which.min(res$combined),]
+worst
+```
+
+Visualizations for the Best Performing Parameter Set
+
+```{r}
+# estimates for best performing parameter set
+ ggplot(msage, aes(date, msage[,best$sim])) + 
+  geom_line() + 
+  geom_line(aes(date, obs), col="blue") +
+  labs(x='Date', y='Best Parameters')
+```
+
+```{r}
+# log transformed estimates for best performing parameter set
+ ggplot(msage, aes(date, msage[,best$sim])) +
+  geom_line() +
+  scale_y_continuous(trans='log') +
+  geom_line(aes(date, obs), col = 'blue') +
+  scale_y_continuous(trans='log') +
+  labs(x='Date', y='Log Transformed Best Parameters')
+```
+
+Visualizations for the Worst Performing Parameter Set
+
+```{r}
+# estimates for worst performing parameter set
+ ggplot(msage, aes(date, msage[,worst$sim])) + geom_line()+geom_line(aes(date, obs), col="red") 
+```
+
+```{r}
+# log transformed estimates for worst performing parameter set
+ ggplot(msage, aes(date, msage[,worst$sim])) +
+  geom_line() +
+  scale_y_continuous(trans='log') +
+  geom_line(aes(date, obs), col = 'red') +
+  scale_y_continuous(trans='log') +
+  labs(x='Date', y='Log Transformed Worst Parameters')
+```
+
+**In a non-transformed lineplot of the best and worst performing parameter sets, it is difficult to identify major differences between the two. However, when we log transform the modeled and observed values, the differences between the models for the two parameter sets become more evident. This is because the model has a dynamic range.**
+
+### Part 4:
+
+**Correlation gives an indication of the strength and direction of the relationship between the predicted and observed values to indicate model performance. RMSE gives an indication of how well the model predictions match the observed values, and this metric is more sensitive to large errors, which helps us to identify significant model differences. We use these metrics together to provide a comprehensive assessment of model performance, because they account for both accuracy and precision of model predictions.**
